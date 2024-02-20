@@ -54,8 +54,14 @@ pub struct RaftLog<T: Storage> {
     /// The highest log position that the application has been instructed
     /// to apply to its state machine.
     ///
-    /// Invariant: applied <= min(committed, persisted)
+    /// Invariant:
+    /// if allow_return_unpersisted_entries == false, applied <= min(committed, persisted)
+    /// else, applied <= committed.
     pub applied: u64,
+
+    /// if set to true, the upper bound of fetching entries will be `committed`,
+    /// otherwise, min(committed, persisted).
+    pub allow_apply_unpersisted_entries: bool,
 }
 
 impl<T> ToString for RaftLog<T>
@@ -87,6 +93,7 @@ impl<T: Storage> RaftLog<T> {
             persisted: last_index,
             applied: first_index - 1,
             unstable: Unstable::new(last_index + 1, logger),
+            allow_apply_unpersisted_entries: false,
         }
     }
 
@@ -310,7 +317,7 @@ impl<T: Storage> RaftLog<T> {
         if idx == 0 {
             return;
         }
-        if idx > cmp::min(self.committed, self.persisted) || idx < self.applied {
+        if idx > self.committed || idx < self.applied {
             fatal!(
                 self.unstable.logger,
                 "applied({}) is out of range [prev_applied({}), min(committed({}), persisted({}))]",
@@ -423,7 +430,11 @@ impl<T: Storage> RaftLog<T> {
     pub fn next_entries_since(&self, since_idx: u64, max_size: Option<u64>) -> Option<Vec<Entry>> {
         let offset = cmp::max(since_idx + 1, self.first_index());
         //let high = cmp::min(self.committed, self.persisted) + 1;
-        let high = self.committed + 1;
+        let high = if self.allow_apply_unpersisted_entries {
+            self.committed + 1
+        } else {
+            cmp::min(self.committed, self.persisted) + 1
+        };
         if high > offset {
             match self.slice(
                 offset,
@@ -450,7 +461,11 @@ impl<T: Storage> RaftLog<T> {
     pub fn has_next_entries_since(&self, since_idx: u64) -> bool {
         let offset = cmp::max(since_idx + 1, self.first_index());
         //let high = cmp::min(self.committed, self.persisted) + 1;
-        let high = self.committed + 1;
+        let high = if self.allow_apply_unpersisted_entries {
+            self.committed + 1
+        } else {
+            cmp::min(self.committed, self.persisted) + 1
+        };
         high > offset
     }
 

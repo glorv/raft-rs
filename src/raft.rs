@@ -599,6 +599,11 @@ impl<T: Storage> Raft<T> {
     pub fn set_check_quorum(&mut self, check_quorum: bool) {
         self.check_quorum = check_quorum;
     }
+
+    /// Set whether allow to apply committed but not persisted raft entries.
+    pub fn set_allow_apply_unpersisted_entries(&mut self, enable: bool) {
+        self.raft_log.allow_apply_unpersisted_entries = enable;
+    }
 }
 
 impl<T: Storage> RaftCore<T> {
