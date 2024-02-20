@@ -603,6 +603,7 @@ impl<T: Storage> Raft<T> {
     /// Set whether allow to apply committed but not persisted raft entries.
     pub fn set_allow_apply_unpersisted_entries(&mut self, enable: bool) {
         self.raft_log.allow_apply_unpersisted_entries = enable;
+        info!(self.logger, "change allow_apply_unpersisted_entries"; "enable" => enable);
     }
 }
 
