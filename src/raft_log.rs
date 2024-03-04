@@ -62,6 +62,10 @@ pub struct RaftLog<T: Storage> {
     /// if set to true, the upper bound of fetching entries will be `committed`,
     /// otherwise, min(committed, persisted).
     pub allow_apply_unpersisted_entries: bool,
+
+    /// the maximum log gap between persisted_index and applied_index if
+    /// `allow_apply_unpersisted_entries` is enabled.
+    pub apply_unpersisted_log_limit: u64,
 }
 
 impl<T> ToString for RaftLog<T>
@@ -94,6 +98,7 @@ impl<T: Storage> RaftLog<T> {
             applied: first_index - 1,
             unstable: Unstable::new(last_index + 1, logger),
             allow_apply_unpersisted_entries: false,
+            apply_unpersisted_log_limit: 0,
         }
     }
 
@@ -317,7 +322,9 @@ impl<T: Storage> RaftLog<T> {
         if idx == 0 {
             return;
         }
-        if /*idx > self.committed ||*/ idx < self.applied {
+        if
+        /*idx > self.committed ||*/
+        idx < self.applied {
             fatal!(
                 self.unstable.logger,
                 "applied({}) is out of range [prev_applied({}), min(committed({}), persisted({}))]",
@@ -430,11 +437,7 @@ impl<T: Storage> RaftLog<T> {
     pub fn next_entries_since(&self, since_idx: u64, max_size: Option<u64>) -> Option<Vec<Entry>> {
         let offset = cmp::max(since_idx + 1, self.first_index());
         //let high = cmp::min(self.committed, self.persisted) + 1;
-        let high = if self.allow_apply_unpersisted_entries {
-            self.committed + 1
-        } else {
-            cmp::min(self.committed, self.persisted) + 1
-        };
+        let high = self.next_entries_upper_bound();
         if high > offset {
             match self.slice(
                 offset,
@@ -449,6 +452,16 @@ impl<T: Storage> RaftLog<T> {
         None
     }
 
+    #[inline]
+    fn next_entries_upper_bound(&self) -> u64 {
+        let persist_gap = if self.allow_apply_unpersisted_entries {
+            self.apply_unpersisted_log_limit
+        } else {
+            0
+        };
+        cmp::min(self.committed, self.persisted + persist_gap) + 1
+    }
+
     /// Returns all the available entries for execution.
     /// If applied is smaller than the index of snapshot, it returns all committed
     /// entries after the index of snapshot.
@@ -461,11 +474,7 @@ impl<T: Storage> RaftLog<T> {
     pub fn has_next_entries_since(&self, since_idx: u64) -> bool {
         let offset = cmp::max(since_idx + 1, self.first_index());
         //let high = cmp::min(self.committed, self.persisted) + 1;
-        let high = if self.allow_apply_unpersisted_entries {
-            self.committed + 1
-        } else {
-            cmp::min(self.committed, self.persisted) + 1
-        };
+        let high = self.next_entries_upper_bound();
         high > offset
     }
 

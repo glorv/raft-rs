@@ -366,6 +366,7 @@ impl<T: Storage> Raft<T> {
                 max_committed_size_per_ready: c.max_committed_size_per_ready,
             },
         };
+        r.r.raft_log.apply_unpersisted_log_limit = c.apply_unpersisted_log_limit;
         confchange::restore(&mut r.prs, r.r.raft_log.last_index(), conf_state)?;
         let new_cs = r.post_conf_change();
         if !raft_proto::conf_state_eq(&new_cs, conf_state) {
@@ -603,7 +604,6 @@ impl<T: Storage> Raft<T> {
     /// Set whether allow to apply committed but not persisted raft entries.
     pub fn set_allow_apply_unpersisted_entries(&mut self, enable: bool) {
         self.raft_log.allow_apply_unpersisted_entries = enable;
-        info!(self.logger, "change allow_apply_unpersisted_entries"; "enable" => enable);
     }
 }
 
