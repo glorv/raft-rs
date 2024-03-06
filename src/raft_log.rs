@@ -1211,6 +1211,91 @@ mod test {
                 );
             }
         }
+
+        let ents = [
+            new_entry(4, 1),
+            new_entry(5, 1),
+            new_entry(6, 1),
+            new_entry(7, 1),
+            new_entry(8, 1),
+            new_entry(9, 1),
+            new_entry(10, 1),
+        ];
+        let tests = vec![
+            (0, 3, 3, 0, None),
+            (0, 3, 4, 0, None),
+            (0, 3, 4, 32, Some(&ents[..1])),
+            (0, 4, 6, 0, Some(&ents[..1])),
+            (0, 4, 6, 2, Some(&ents[..3])),
+            (0, 4, 6, 6, Some(&ents[..3])),
+            (0, 4, 10, 0, Some(&ents[..1])),
+            (0, 4, 10, 2, Some(&ents[..3])),
+            (0, 4, 10, 6, Some(&ents)),
+            (0, 4, 10, 7, Some(&ents)),
+            (0, 6, 4, 0, Some(&ents[..1])),
+            (0, 6, 4, 32, Some(&ents[..1])),
+            (0, 5, 5, 0, Some(&ents[..2])),
+            (3, 4, 3, 32, None),
+            (3, 5, 5, 32, Some(&ents[..2])),
+            (3, 6, 7, 32, Some(&ents[..4])),
+            (3, 7, 6, 32, Some(&ents[..3])),
+            (4, 5, 5, 32, Some(&ents[1..2])),
+            (4, 5, 5, 32, Some(&ents[1..2])),
+            (4, 5, 7, 32, Some(&ents[1..4])),
+            (4, 5, 9, 32, Some(&ents[1..6])),
+            (4, 5, 10, 32, Some(&ents[1..])),
+            (4, 7, 5, 32, Some(&ents[1..2])),
+            (4, 7, 7, 0, Some(&ents[1..4])),
+            (5, 5, 5, 0, None),
+            (5, 7, 7, 32, Some(&ents[2..4])),
+            (7, 7, 7, 32, None),
+        ];
+        for (i, &(applied, persisted, committed, limit, ref expect_entries)) in
+            tests.iter().enumerate()
+        {
+            let store = MemStorage::new();
+            store.wl().apply_snapshot(new_snapshot(3, 1)).expect("");
+            let mut raft_log = RaftLog::new(store, l.clone());
+            raft_log.allow_apply_unpersisted_entries = true;
+            raft_log.apply_unpersisted_log_limit = limit;
+            raft_log.append(&ents);
+            let unstable = raft_log.unstable_entries().to_vec();
+            if let Some(e) = unstable.last() {
+                raft_log.stable_entries(e.get_index(), e.get_term());
+                raft_log.mut_store().wl().append(&unstable).expect("");
+            }
+            raft_log.maybe_persist(persisted, 1);
+            assert_eq!(
+                persisted, raft_log.persisted,
+                "#{}: persisted = {}, want {}",
+                i, raft_log.persisted, persisted
+            );
+            raft_log.maybe_commit(committed, 1);
+            assert_eq!(
+                committed, raft_log.committed,
+                "#{}: committed = {}, want {}",
+                i, raft_log.committed, committed
+            );
+            #[allow(deprecated)]
+            raft_log.applied_to(applied);
+
+            let expect_has_next = expect_entries.is_some();
+            let actual_has_next = raft_log.has_next_entries();
+            if actual_has_next != expect_has_next {
+                panic!(
+                    "#{}: hasNext = {}, want {}",
+                    i, actual_has_next, expect_has_next
+                );
+            }
+
+            let next_entries = raft_log.next_entries(None);
+            if next_entries != expect_entries.map(|n| n.to_vec()) {
+                panic!(
+                    "#{}: next_entries = {:?}, want {:?}",
+                    i, next_entries, expect_entries
+                );
+            }
+        }
     }
 
     #[test]
