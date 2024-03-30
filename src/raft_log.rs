@@ -322,7 +322,7 @@ impl<T: Storage> RaftLog<T> {
         if idx == 0 {
             return;
         }
-        if idx > self.applied_index_upper_bound() || idx < self.applied {
+        if idx > self.committed || idx < self.applied {
             fatal!(
                 self.unstable.logger,
                 "applied({}) is out of range [prev_applied({}), min(committed({}), persisted({}))]",
